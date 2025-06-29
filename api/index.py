@@ -27,9 +27,8 @@ def modify_fit_sport(input_file, new_sport):
             if record.get_value('sport') is not None:
                 record.set_value('sport', new_sport)
         
-        # Escribir el mensaje en el nuevo archivo
-        for data in record.get_values():
-            output.write(data)
+        # Escribir el mensaje completo en formato binario
+        output.write(record.get_raw_bytes())
     
     output.seek(0)
     return output
