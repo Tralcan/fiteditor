@@ -1,0 +1,2 @@
+Flask==2.3.3
+fitparse==1.2.0
