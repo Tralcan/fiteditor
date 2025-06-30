@@ -1,3 +1,4 @@
-Flask==2.0.1
+Flask==2.3.1
+Werkzeug==2.3.8
 fitparse==1.2.0
 fit-tool==0.9.13
