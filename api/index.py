@@ -24,14 +24,29 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def modify_fit_sport(input_file, new_sport):
-    # Leer el archivo en memoria y verificar su contenido
-    input_data = BytesIO(input_file.read())
-    input_data.seek(0)
-    file_size = len(input_data.getvalue())
-    if file_size == 0:
-        logger.error("El archivo FIT está vacío o no se pudo leer")
-        raise ValueError("El archivo FIT está vacío o no se pudo leer")
-    logger.info(f"Archivo FIT leído en memoria, tamaño: {file_size} bytes")
+    # Verificar si el stream está cerrado
+    try:
+        if input_file.closed:
+            logger.error("El stream input_file está cerrado antes de leer")
+            raise ValueError("El stream del archivo está cerrado")
+        
+        # Leer el archivo en una variable intermedia
+        logger.info("Leyendo el archivo FIT en memoria")
+        file_content = input_file.read()
+        file_size = len(file_content)
+        if file_size == 0:
+            logger.error("El archivo FIT está vacío o no se pudo leer")
+            raise ValueError("El archivo FIT está vacío o no se pudo leer")
+        
+        logger.info(f"Archivo FIT leído, tamaño: {file_size} bytes")
+        
+        # Crear BytesIO con el contenido
+        input_data = BytesIO(file_content)
+        input_data.seek(0)
+        
+    except Exception as e:
+        logger.error(f"Error al leer input_file: {str(e)}")
+        raise ValueError(f"No se pudo leer el archivo FIT: {str(e)}")
     
     # Mapeo de deportes a valores de Sport y SubSport de fit-tool
     sport_mapping = {
