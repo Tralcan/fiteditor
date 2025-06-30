@@ -24,8 +24,14 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def modify_fit_sport(input_file, new_sport):
-    # Leer el archivo en memoria para evitar problemas de I/O
+    # Leer el archivo en memoria y verificar su contenido
     input_data = BytesIO(input_file.read())
+    input_data.seek(0)
+    file_size = len(input_data.getvalue())
+    if file_size == 0:
+        logger.error("El archivo FIT está vacío o no se pudo leer")
+        raise ValueError("El archivo FIT está vacío o no se pudo leer")
+    logger.info(f"Archivo FIT leído en memoria, tamaño: {file_size} bytes")
     
     # Mapeo de deportes a valores de Sport y SubSport de fit-tool
     sport_mapping = {
@@ -57,6 +63,7 @@ def modify_fit_sport(input_file, new_sport):
     
     try:
         # Verificar el archivo FIT con fitparse
+        logger.info("Iniciando lectura del archivo FIT con fitparse")
         input_data.seek(0)
         fitfile = FitFile(input_data)
         file_id_found = False
@@ -68,6 +75,8 @@ def modify_fit_sport(input_file, new_sport):
             file_id_fields = {field.name: field.value for field in record if field.value is not None}
             logger.info(f"Mensaje file_id encontrado con campos: {file_id_fields}")
             break
+        
+        logger.info(f"Lectura del archivo FIT completada, file_id encontrado: {file_id_found}")
         
         # Reiniciar el puntero para procesar de nuevo
         input_data.seek(0)
@@ -113,6 +122,7 @@ def modify_fit_sport(input_file, new_sport):
             raise ValueError("No se pudo añadir el mensaje file_id: ningún conjunto de campos fue aceptado")
         
         # Copiar otros mensajes del archivo original
+        logger.info("Copiando mensajes restantes del archivo FIT")
         input_data.seek(0)
         fitfile = FitFile(input_data)
         for record in fitfile.get_messages():
@@ -124,6 +134,7 @@ def modify_fit_sport(input_file, new_sport):
                     logger.warning(f"No se pudo añadir mensaje {record.name}: {str(e)}")
                     continue
         
+        logger.info("Generando archivo FIT")
         # Generar el archivo FIT
         try:
             fit_file = builder.build()
@@ -139,8 +150,12 @@ def modify_fit_sport(input_file, new_sport):
     except Exception as e:
         logger.error(f"Error al procesar el archivo FIT: {str(e)}")
         input_data.seek(0)
+        if len(input_data.getvalue()) == 0:
+            logger.error("input_data está vacío en el bloque de excepción")
+            raise ValueError("No se pudo devolver el archivo original: input_data está vacío")
         output = BytesIO()
-        output.write(input_data.getvalue())
+        input_data.seek(0)
+        shutil.copyfileobj(input_data, output)
         output.seek(0)
         return output, f"Advertencia: No se pudo modificar el campo 'sport' debido a un error: {str(e)}. Se devuelve el archivo original."
 
