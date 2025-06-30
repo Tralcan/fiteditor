@@ -31,35 +31,38 @@ def modify_fit_sport(input_file, new_sport):
     # Reiniciar el puntero del archivo
     input_file.seek(0)
     
-    # Verificar si el archivo FIT es válido con fitparse
     try:
+        # Parsear el archivo FIT original con fitparse para verificar su estructura
         fitfile = FitFile(input_file)
         file_id_found = False
-        sport_found = False
         file_id_fields = {}
         
-        # Leer mensajes para verificar file_id y sport
+        # Leer mensajes file_id
         for record in fitfile.get_messages('file_id'):
             file_id_found = True
             file_id_fields = {field.name: field.value for field in record if field.value is not None}
-            if 'sport' in file_id_fields:
-                sport_found = True
+            logger.info(f"Mensaje file_id encontrado con campos: {file_id_fields}")
             break
         
-        # Reiniciar el puntero para fitencode
+        # Reiniciar el puntero para procesar de nuevo
         input_file.seek(0)
         
         # Crear un nuevo archivo FIT con fitencode
         fit_file = fitencode.FitFile()
         
-        # Si no hay file_id, crear uno nuevo
-        if not file_id_found:
+        # Añadir o modificar el mensaje file_id
+        if file_id_found:
+            file_id_fields['sport'] = new_sport
+            try:
+                fit_file.add_message('file_id', **file_id_fields)
+                logger.info(f"Modificado file_id con sport: {new_sport}")
+            except Exception as e:
+                logger.error(f"Error al añadir mensaje file_id: {str(e)}")
+                raise ValueError(f"No se pudo añadir el mensaje file_id: {str(e)}")
+        else:
+            # Crear un nuevo mensaje file_id si no existe
             logger.info("No se encontró mensaje file_id, creando uno nuevo")
             fit_file.add_message('file_id', type='activity', sport=new_sport, time_created=fitencode.types.field_types.DateTime.now())
-        else:
-            # Modificar o añadir el campo sport
-            file_id_fields['sport'] = new_sport
-            fit_file.add_message('file_id', **file_id_fields)
         
         # Copiar otros mensajes del archivo original
         for record in fitfile.get_messages():
@@ -72,14 +75,14 @@ def modify_fit_sport(input_file, new_sport):
                     continue
         
         # Generar el archivo FIT en memoria
-        output = BytesIO()
         try:
+            output = BytesIO()
             output.write(fit_file.to_bytes())
             output.seek(0)
             logger.info("Archivo FIT generado exitosamente")
             return output, None
         except Exception as e:
-            logger.error(f"Error al generar archivo FIT: {str(e)}")
+            logger.error(f"Error al generar archivo FIT con fitencode: {str(e)}")
             raise ValueError(f"No se pudo generar el archivo FIT: {str(e)}")
     
     except Exception as e:
