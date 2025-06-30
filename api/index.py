@@ -3,9 +3,9 @@ import os
 from fitparse import FitFile
 from fit_tool.fit_file_builder import FitFileBuilder
 from fit_tool.profile.messages.file_id_message import FileIdMessage
-from fit_tool.profile.profile_type import Sport, FileType, Manufacturer
+from fit_tool.profile.profile_type import Sport, SubSport, FileType, Manufacturer
+import datetime
 from io import BytesIO
-import tempfile
 import shutil
 import logging
 
@@ -23,21 +23,28 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def modify_fit_sport(input_file, new_sport):
-    # Mapeo de deportes a valores de Sport de fit-tool
+    # Mapeo de deportes a valores de Sport y SubSport de fit-tool
     sport_mapping = {
-        'running': Sport.RUNNING,
-        'cycling': Sport.CYCLING,
-        'swimming': Sport.SWIMMING,
-        'generic': Sport.GENERIC,
-        'hiking': Sport.HIKING,
-        'walking': Sport.WALKING,
-        'trail_running': Sport.TRAIL_RUNNING
+        'running': (Sport.RUNNING, None),
+        'cycling': (Sport.CYCLING, None),
+        'swimming': (Sport.SWIMMING, None),
+        'generic': (Sport.GENERIC, None),
+        'hiking': (Sport.HIKING, None),
+        'walking': (Sport.WALKING, None),
+        'trail_running': (Sport.RUNNING, getattr(SubSport, 'TRAIL', SubSport.GENERIC))
     }
     
     if new_sport not in sport_mapping:
         logger.error(f"Deporte no válido: {new_sport}")
         raise ValueError(f"Deporte '{new_sport}' no es válido. Debe ser uno de {list(sport_mapping.keys())}")
 
+    # Obtener el valor de Sport y SubSport
+    sport_value, subsport_value = sport_mapping[new_sport]
+    
+    # Loggear valores disponibles de Sport y SubSport para depuración
+    logger.info(f"Valores disponibles de Sport: {[attr for attr in dir(Sport) if not attr.startswith('_')]}")
+    logger.info(f"Valores disponibles de SubSport: {[attr for attr in dir(SubSport) if not attr.startswith('_')]}")
+    
     # Reiniciar el puntero del archivo
     input_file.seek(0)
     
@@ -62,8 +69,12 @@ def modify_fit_sport(input_file, new_sport):
         
         # Añadir o modificar el mensaje file_id
         if file_id_found:
-            # Mantener los campos existentes y actualizar sport
-            file_id_fields['sport'] = sport_mapping[new_sport]
+            # Mantener los campos existentes y actualizar sport y sub_sport
+            file_id_fields['sport'] = sport_value
+            if subsport_value:
+                file_id_fields['sub_sport'] = subsport_value
+            else:
+                file_id_fields.pop('sub_sport', None)  # Eliminar sub_sport si no es necesario
             file_id_fields['type'] = file_id_fields.get('type', FileType.ACTIVITY)
             file_id_fields['manufacturer'] = file_id_fields.get('manufacturer', Manufacturer.DEVELOPMENT)
             file_id_fields['product'] = file_id_fields.get('product', 0)
@@ -71,21 +82,24 @@ def modify_fit_sport(input_file, new_sport):
             file_id_fields['time_created'] = file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))
             try:
                 builder.add(FileIdMessage(**file_id_fields))
-                logger.info(f"Modificado file_id con sport: {new_sport}")
+                logger.info(f"Modificado file_id con sport: {sport_value}, sub_sport: {subsport_value}")
             except Exception as e:
                 logger.error(f"Error al añadir mensaje file_id: {str(e)}")
                 raise ValueError(f"No se pudo añadir el mensaje file_id: {str(e)}")
         else:
             # Crear un nuevo mensaje file_id si no existe
             logger.info("No se encontró mensaje file_id, creando uno nuevo")
-            builder.add(FileIdMessage(
-                type=FileType.ACTIVITY,
-                sport=sport_mapping[new_sport],
-                manufacturer=Manufacturer.DEVELOPMENT,
-                product=0,
-                serial_number=0x12345678,
-                time_created=round(datetime.datetime.now().timestamp() * 1000)
-            ))
+            file_id_data = {
+                'type': FileType.ACTIVITY,
+                'sport': sport_value,
+                'manufacturer': Manufacturer.DEVELOPMENT,
+                'product': 0,
+                'serial_number': 0x12345678,
+                'time_created': round(datetime.datetime.now().timestamp() * 1000)
+            }
+            if subsport_value:
+                file_id_data['sub_sport'] = subsport_value
+            builder.add(FileIdMessage(**file_id_data))
         
         # Copiar otros mensajes del archivo original
         input_file.seek(0)
