@@ -3,11 +3,12 @@ import os
 from fitparse import FitFile
 from fit_tool.fit_file_builder import FitFileBuilder
 from fit_tool.profile.messages.file_id_message import FileIdMessage
-from fit_tool.profile.profile_type import Sport, SubSport, FileType, Manufacturer
+from fit_tool.profile.profile_type import Sport, SubSport, FileType
 import datetime
 from io import BytesIO
 import shutil
 import logging
+import inspect
 
 app = Flask(__name__, template_folder="../templates")
 
@@ -41,9 +42,10 @@ def modify_fit_sport(input_file, new_sport):
     # Obtener el valor de Sport y SubSport
     sport_value, subsport_value = sport_mapping[new_sport]
     
-    # Loggear valores disponibles de Sport y SubSport para depuración
+    # Loggear valores disponibles para depuración
     logger.info(f"Valores disponibles de Sport: {[attr for attr in dir(Sport) if not attr.startswith('_')]}")
     logger.info(f"Valores disponibles de SubSport: {[attr for attr in dir(SubSport) if not attr.startswith('_')]}")
+    logger.info(f"Parámetros aceptados por FileIdMessage: {inspect.signature(FileIdMessage.__init__)}")
     
     # Reiniciar el puntero del archivo
     input_file.seek(0)
@@ -69,19 +71,16 @@ def modify_fit_sport(input_file, new_sport):
         
         # Añadir o modificar el mensaje file_id
         if file_id_found:
-            # Mantener los campos existentes y actualizar sport y sub_sport
-            file_id_fields['sport'] = sport_value
+            # Mantener solo los campos soportados
+            file_id_data = {
+                'type': file_id_fields.get('type', FileType.ACTIVITY),
+                'sport': sport_value,
+                'time_created': file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))
+            }
             if subsport_value:
-                file_id_fields['sub_sport'] = subsport_value
-            else:
-                file_id_fields.pop('sub_sport', None)  # Eliminar sub_sport si no es necesario
-            file_id_fields['type'] = file_id_fields.get('type', FileType.ACTIVITY)
-            file_id_fields['manufacturer'] = file_id_fields.get('manufacturer', Manufacturer.DEVELOPMENT)
-            file_id_fields['product'] = file_id_fields.get('product', 0)
-            file_id_fields['serial_number'] = file_id_fields.get('serial_number', 0x12345678)
-            file_id_fields['time_created'] = file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))
+                file_id_data['sub_sport'] = subsport_value
             try:
-                builder.add(FileIdMessage(**file_id_fields))
+                builder.add(FileIdMessage(**file_id_data))
                 logger.info(f"Modificado file_id con sport: {sport_value}, sub_sport: {subsport_value}")
             except Exception as e:
                 logger.error(f"Error al añadir mensaje file_id: {str(e)}")
@@ -92,9 +91,6 @@ def modify_fit_sport(input_file, new_sport):
             file_id_data = {
                 'type': FileType.ACTIVITY,
                 'sport': sport_value,
-                'manufacturer': Manufacturer.DEVELOPMENT,
-                'product': 0,
-                'serial_number': 0x12345678,
                 'time_created': round(datetime.datetime.now().timestamp() * 1000)
             }
             if subsport_value:
