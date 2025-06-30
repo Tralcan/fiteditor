@@ -3,7 +3,7 @@ import os
 from fitparse import FitFile
 from fit_tool.fit_file_builder import FitFileBuilder
 from fit_tool.profile.messages.file_id_message import FileIdMessage
-from fit_tool.profile.profile_type import Sport, SubSport
+from fit_tool.profile.profile_type import Sport, SubSport, FileType, Manufacturer
 import datetime
 from io import BytesIO
 import shutil
@@ -24,6 +24,9 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def modify_fit_sport(input_file, new_sport):
+    # Leer el archivo en memoria para evitar problemas de I/O
+    input_data = BytesIO(input_file.read())
+    
     # Mapeo de deportes a valores de Sport y SubSport de fit-tool
     sport_mapping = {
         'running': (Sport.RUNNING, None),
@@ -44,19 +47,18 @@ def modify_fit_sport(input_file, new_sport):
     
     # Loggear información de depuración
     try:
-        logger.info(f"Parámetros aceptados por FileIdMessage: {inspect.signature(FileIdMessage.__init__)}")
+        logger.info(f"Parámetros aceptados por FileIdMessage.__init__: {inspect.signature(FileIdMessage.__init__)}")
+        logger.info(f"Atributos disponibles de FileIdMessage: {dir(FileIdMessage)}")
     except Exception as e:
         logger.error(f"Error al inspeccionar FileIdMessage.__init__: {str(e)}")
     
     logger.info(f"Valores disponibles de Sport: {[attr for attr in dir(Sport) if not attr.startswith('_')]}")
     logger.info(f"Valores disponibles de SubSport: {[attr for attr in dir(SubSport) if not attr.startswith('_')]}")
     
-    # Reiniciar el puntero del archivo
-    input_file.seek(0)
-    
     try:
         # Verificar el archivo FIT con fitparse
-        fitfile = FitFile(input_file)
+        input_data.seek(0)
+        fitfile = FitFile(input_data)
         file_id_found = False
         file_id_fields = {}
         
@@ -68,7 +70,7 @@ def modify_fit_sport(input_file, new_sport):
             break
         
         # Reiniciar el puntero para procesar de nuevo
-        input_file.seek(0)
+        input_data.seek(0)
         
         # Crear un nuevo archivo FIT con fit-tool
         builder = FitFileBuilder(auto_define=True)
@@ -78,28 +80,27 @@ def modify_fit_sport(input_file, new_sport):
         if isinstance(time_created, datetime.datetime):
             time_created = round(time_created.timestamp() * 1000)
         
-        # Intentar diferentes combinaciones de campos
+        # Intentar diferentes formas de crear/configurar FileIdMessage
         field_attempts = [
-            {'sport': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
-            {'sport_type': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
-            {'activity_type': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
-            {'sport_id': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
-            {'sport': sport_value, 'time_created': time_created},
-            {'sport_type': sport_value, 'time_created': time_created},
-            {'activity_type': sport_value, 'time_created': time_created},
-            {'sport_id': sport_value, 'time_created': time_created},
-            {'time_created': time_created},
-            {}  # Sin parámetros como último recurso
+            {},  # Sin parámetros
+            {'type': FileType.ACTIVITY, 'manufacturer': Manufacturer.GARMIN, 'time_created': time_created},
+            {'file_type': FileType.ACTIVITY, 'manufacturer': Manufacturer.GARMIN, 'time_created': time_created}
         ]
         
-        # Ajustar intentos para deportes sin sub_sport
-        if not subsport_value:
-            field_attempts = [attempt for attempt in field_attempts if 'sub_sport' not in attempt]
-        
         success = False
+        file_id_msg = None
         for attempt in field_attempts:
             try:
-                builder.add(FileIdMessage(**attempt))
+                file_id_msg = FileIdMessage(**attempt)
+                # Configurar sport y sub_sport con setters
+                try:
+                    file_id_msg.sport = sport_value
+                    if subsport_value:
+                        file_id_msg.sub_sport = subsport_value
+                    logger.info(f"Éxito al configurar sport/sub_sport con setters para campos: {attempt}")
+                except AttributeError as e:
+                    logger.warning(f"No se pudo configurar sport/sub_sport con setters: {str(e)}")
+                builder.add(file_id_msg)
                 logger.info(f"Éxito al añadir file_id con campos: {attempt}")
                 success = True
                 break
@@ -112,8 +113,8 @@ def modify_fit_sport(input_file, new_sport):
             raise ValueError("No se pudo añadir el mensaje file_id: ningún conjunto de campos fue aceptado")
         
         # Copiar otros mensajes del archivo original
-        input_file.seek(0)
-        fitfile = FitFile(input_file)
+        input_data.seek(0)
+        fitfile = FitFile(input_data)
         for record in fitfile.get_messages():
             if record.name != 'file_id':
                 fields = {field.name: field.value for field in record if field.value is not None}
@@ -123,7 +124,7 @@ def modify_fit_sport(input_file, new_sport):
                     logger.warning(f"No se pudo añadir mensaje {record.name}: {str(e)}")
                     continue
         
-        # Generar el archivo FIT en memoria
+        # Generar el archivo FIT
         try:
             fit_file = builder.build()
             output = BytesIO()
@@ -137,10 +138,9 @@ def modify_fit_sport(input_file, new_sport):
     
     except Exception as e:
         logger.error(f"Error al procesar el archivo FIT: {str(e)}")
-        # Devolver el archivo original como fallback
-        input_file.seek(0)
+        input_data.seek(0)
         output = BytesIO()
-        shutil.copyfileobj(input_file, output)
+        output.write(input_data.getvalue())
         output.seek(0)
         return output, f"Advertencia: No se pudo modificar el campo 'sport' debido a un error: {str(e)}. Se devuelve el archivo original."
 
