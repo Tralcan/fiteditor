@@ -43,9 +43,13 @@ def modify_fit_sport(input_file, new_sport):
     sport_value, subsport_value = sport_mapping[new_sport]
     
     # Loggear información de depuración
+    try:
+        logger.info(f"Parámetros aceptados por FileIdMessage: {inspect.signature(FileIdMessage.__init__)}")
+    except Exception as e:
+        logger.error(f"Error al inspeccionar FileIdMessage.__init__: {str(e)}")
+    
     logger.info(f"Valores disponibles de Sport: {[attr for attr in dir(Sport) if not attr.startswith('_')]}")
     logger.info(f"Valores disponibles de SubSport: {[attr for attr in dir(SubSport) if not attr.startswith('_')]}")
-    logger.info(f"Parámetros aceptados por FileIdMessage: {inspect.signature(FileIdMessage.__init__)}")
     
     # Reiniciar el puntero del archivo
     input_file.seek(0)
@@ -69,60 +73,43 @@ def modify_fit_sport(input_file, new_sport):
         # Crear un nuevo archivo FIT con fit-tool
         builder = FitFileBuilder(auto_define=True)
         
-        # Añadir o modificar el mensaje file_id
-        if file_id_found:
-            # Intentar diferentes nombres para el campo sport
-            field_attempts = [
-                {'sport': sport_value},
-                {'sport_type': sport_value},
-                {'activity_type': sport_value}
-            ]
-            if subsport_value:
-                for attempt in field_attempts:
-                    attempt['sub_sport'] = subsport_value
-            field_attempts.append({'time_created': file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))})
-            
-            success = False
-            for attempt in field_attempts:
-                try:
-                    builder.add(FileIdMessage(**attempt))
-                    logger.info(f"Éxito al añadir file_id con campos: {attempt}")
-                    success = True
-                    break
-                except Exception as e:
-                    logger.warning(f"Fallo al intentar file_id con campos {attempt}: {str(e)}")
-                    continue
-            
-            if not success:
-                logger.error("No se pudo añadir file_id con ningún conjunto de campos")
-                raise ValueError("No se pudo añadir el mensaje file_id: ningún conjunto de campos fue aceptado")
-        else:
-            # Crear un nuevo mensaje file_id si no existe
-            logger.info("No se encontró mensaje file_id, creando uno nuevo")
-            field_attempts = [
-                {'sport': sport_value},
-                {'sport_type': sport_value},
-                {'activity_type': sport_value}
-            ]
-            if subsport_value:
-                for attempt in field_attempts:
-                    attempt['sub_sport'] = subsport_value
-            field_attempts.append({'time_created': round(datetime.datetime.now().timestamp() * 1000)})
-            
-            success = False
-            for attempt in field_attempts:
-                try:
-                    builder.add(FileIdMessage(**attempt))
-                    logger.info(f"Éxito al crear file_id con campos: {attempt}")
-                    success = True
-                    break
-                except Exception as e:
-                    logger.warning(f"Fallo al intentar crear file_id con campos {attempt}: {str(e)}")
-                    continue
-            
-            if not success:
-                logger.error("No se pudo crear file_id con ningún conjunto de campos")
-                raise ValueError("No se pudo crear el mensaje file_id: ningún conjunto de campos fue aceptado")
+        # Convertir time_created a milisegundos si es un objeto datetime
+        time_created = file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))
+        if isinstance(time_created, datetime.datetime):
+            time_created = round(time_created.timestamp() * 1000)
+        
+        # Intentar diferentes combinaciones de campos
+        field_attempts = [
+            {'sport': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
+            {'sport_type': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
+            {'activity_type': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
+            {'sport_id': sport_value, 'sub_sport': subsport_value, 'time_created': time_created},
+            {'sport': sport_value, 'time_created': time_created},
+            {'sport_type': sport_value, 'time_created': time_created},
+            {'activity_type': sport_value, 'time_created': time_created},
+            {'sport_id': sport_value, 'time_created': time_created},
+            {'time_created': time_created},
+            {}  # Sin parámetros como último recurso
+        ]
+        
+        # Ajustar intentos para deportes sin sub_sport
+        if not subsport_value:
+            field_attempts = [attempt for attempt in field_attempts if 'sub_sport' not in attempt]
+        
+        success = False
+        for attempt in field_attempts:
+            try:
+                builder.add(FileIdMessage(**attempt))
+                logger.info(f"Éxito al añadir file_id con campos: {attempt}")
+                success = True
+                break
+            except Exception as e:
+                logger.warning(f"Fallo al intentar file_id con campos {attempt}: {str(e)}")
+                continue
+        
+        if not success:
+            logger.error("No se pudo añadir file_id con ningún conjunto de campos")
+            raise ValueError("No se pudo añadir el mensaje file_id: ningún conjunto de campos fue aceptado")
         
         # Copiar otros mensajes del archivo original
         input_file.seek(0)
