@@ -3,7 +3,7 @@ import os
 from fitparse import FitFile
 from fit_tool.fit_file_builder import FitFileBuilder
 from fit_tool.profile.messages.file_id_message import FileIdMessage
-from fit_tool.profile.profile_type import Sport, SubSport, FileType
+from fit_tool.profile.profile_type import Sport, SubSport
 import datetime
 from io import BytesIO
 import shutil
@@ -73,7 +73,6 @@ def modify_fit_sport(input_file, new_sport):
         if file_id_found:
             # Mantener solo los campos soportados
             file_id_data = {
-                'type': file_id_fields.get('type', FileType.ACTIVITY),
                 'sport': sport_value,
                 'time_created': file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))
             }
@@ -89,7 +88,6 @@ def modify_fit_sport(input_file, new_sport):
             # Crear un nuevo mensaje file_id si no existe
             logger.info("No se encontró mensaje file_id, creando uno nuevo")
             file_id_data = {
-                'type': FileType.ACTIVITY,
                 'sport': sport_value,
                 'time_created': round(datetime.datetime.now().timestamp() * 1000)
             }
