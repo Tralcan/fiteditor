@@ -42,7 +42,7 @@ def modify_fit_sport(input_file, new_sport):
     # Obtener el valor de Sport y SubSport
     sport_value, subsport_value = sport_mapping[new_sport]
     
-    # Loggear valores disponibles para depuración
+    # Loggear información de depuración
     logger.info(f"Valores disponibles de Sport: {[attr for attr in dir(Sport) if not attr.startswith('_')]}")
     logger.info(f"Valores disponibles de SubSport: {[attr for attr in dir(SubSport) if not attr.startswith('_')]}")
     logger.info(f"Parámetros aceptados por FileIdMessage: {inspect.signature(FileIdMessage.__init__)}")
@@ -71,29 +71,58 @@ def modify_fit_sport(input_file, new_sport):
         
         # Añadir o modificar el mensaje file_id
         if file_id_found:
-            # Mantener solo los campos soportados
-            file_id_data = {
-                'sport': sport_value,
-                'time_created': file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))
-            }
+            # Intentar diferentes nombres para el campo sport
+            field_attempts = [
+                {'sport': sport_value},
+                {'sport_type': sport_value},
+                {'activity_type': sport_value}
+            ]
             if subsport_value:
-                file_id_data['sub_sport'] = subsport_value
-            try:
-                builder.add(FileIdMessage(**file_id_data))
-                logger.info(f"Modificado file_id con sport: {sport_value}, sub_sport: {subsport_value}")
-            except Exception as e:
-                logger.error(f"Error al añadir mensaje file_id: {str(e)}")
-                raise ValueError(f"No se pudo añadir el mensaje file_id: {str(e)}")
+                for attempt in field_attempts:
+                    attempt['sub_sport'] = subsport_value
+            field_attempts.append({'time_created': file_id_fields.get('time_created', round(datetime.datetime.now().timestamp() * 1000))})
+            
+            success = False
+            for attempt in field_attempts:
+                try:
+                    builder.add(FileIdMessage(**attempt))
+                    logger.info(f"Éxito al añadir file_id con campos: {attempt}")
+                    success = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Fallo al intentar file_id con campos {attempt}: {str(e)}")
+                    continue
+            
+            if not success:
+                logger.error("No se pudo añadir file_id con ningún conjunto de campos")
+                raise ValueError("No se pudo añadir el mensaje file_id: ningún conjunto de campos fue aceptado")
         else:
             # Crear un nuevo mensaje file_id si no existe
             logger.info("No se encontró mensaje file_id, creando uno nuevo")
-            file_id_data = {
-                'sport': sport_value,
-                'time_created': round(datetime.datetime.now().timestamp() * 1000)
-            }
+            field_attempts = [
+                {'sport': sport_value},
+                {'sport_type': sport_value},
+                {'activity_type': sport_value}
+            ]
             if subsport_value:
-                file_id_data['sub_sport'] = subsport_value
-            builder.add(FileIdMessage(**file_id_data))
+                for attempt in field_attempts:
+                    attempt['sub_sport'] = subsport_value
+            field_attempts.append({'time_created': round(datetime.datetime.now().timestamp() * 1000)})
+            
+            success = False
+            for attempt in field_attempts:
+                try:
+                    builder.add(FileIdMessage(**attempt))
+                    logger.info(f"Éxito al crear file_id con campos: {attempt}")
+                    success = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Fallo al intentar crear file_id con campos {attempt}: {str(e)}")
+                    continue
+            
+            if not success:
+                logger.error("No se pudo crear file_id con ningún conjunto de campos")
+                raise ValueError("No se pudo crear el mensaje file_id: ningún conjunto de campos fue aceptado")
         
         # Copiar otros mensajes del archivo original
         input_file.seek(0)
